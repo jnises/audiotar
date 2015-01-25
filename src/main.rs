@@ -1,20 +1,19 @@
 
-use std::default::Default;
 mod sndfile {
     extern crate libc;
+    use std::default::Default;
     type SfCount = i64;
-    type SfHandle = libc::size_t;
+    struct SndFile;
 
-    #[allow(dead_code)]
-    pub static SFM_READ: i32 = 0x10;
-    #[allow(dead_code)]
-    pub static SFM_WRITE: i32 = 0x20;
-    #[allow(dead_code)]
-    pub static SFM_RDWR: i32 = 0x30;
+    enum SFM {
+        READ = 0x10,
+        WRITE = 0x20,
+        RDWR = 0x30,
+    }
 
     #[repr(C)]
     #[derive(Default)]
-    pub struct SfInfo {
+    struct SfInfo {
         frames: SfCount,
         samplerate: i32,
         channels: i32,
@@ -25,18 +24,43 @@ mod sndfile {
 
     #[link(name = "sndfile")]
     extern {
-        pub fn sf_open(path: *const u8, mode: i32, sfinfo: *mut SfInfo) -> SfHandle;
-        pub fn sf_close(sndfile: SfHandle) -> i32;
+        fn sf_open(path: *const u8, mode: i32, sfinfo: *mut SfInfo) -> *mut SndFile;
+        fn sf_close(sndfile: *mut SndFile) -> i32;
+    }
+
+    #[derive(Show)]
+    pub struct File {
+        handle: *mut SndFile,
+        path: String,
+    }
+    
+    impl Drop for File {
+        fn drop(&mut self) {
+            unsafe {
+                sf_close(self.handle);
+            }
+        }
+    }
+
+    impl File {
+        pub fn OpenRead(path: &str) -> File {
+            let mut info: SfInfo = Default::default();
+            File { handle: unsafe { sf_open(path.as_ptr(), SFM::READ as i32, &mut info) },
+                   path: String::from_str(path),
+            }
+        }
+
+        pub fn OpenWrite(path: &str) -> File {
+            let mut info: SfInfo = Default::default();
+            File { handle: unsafe { sf_open(path.as_ptr(), SFM::WRITE as i32, &mut info) },
+                   path: String::from_str(path),
+            }
+        }
+
     }
 }
 
 fn main() {
-    let mut info: sndfile::SfInfo = Default::default();
-    let handle = unsafe {
-        sndfile::sf_open("test.wav".as_ptr(), sndfile::SFM_READ, &mut info)
-    };
-    println!("{}", handle);
-    unsafe {
-        sndfile::sf_close(handle);
-    }
+    let sound = sndfile::File::OpenRead("test.wav");
+    println!("{}", sound);
 }
