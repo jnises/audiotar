@@ -3,9 +3,11 @@ mod sndfile {
     extern crate libc;
     use std::default::Default;
     type SfCount = i64;
+    #[repr(C)]
     struct SndFile;
 
-    enum SFM {
+    #[allow(dead_code)]
+    pub enum SFM {
         READ = 0x10,
         WRITE = 0x20,
         RDWR = 0x30,
@@ -28,6 +30,7 @@ mod sndfile {
         fn sf_close(sndfile: *mut SndFile) -> i32;
     }
 
+    #[allow(raw_pointer_derive)]
     #[derive(Show)]
     pub struct File {
         handle: *mut SndFile,
@@ -43,24 +46,16 @@ mod sndfile {
     }
 
     impl File {
-        pub fn OpenRead(path: &str) -> File {
+        pub fn open(path: &str, mode: SFM) -> File {
             let mut info: SfInfo = Default::default();
-            File { handle: unsafe { sf_open(path.as_ptr(), SFM::READ as i32, &mut info) },
+            File { handle: unsafe { sf_open(path.as_ptr(), mode as i32, &mut info) },
                    path: String::from_str(path),
             }
         }
-
-        pub fn OpenWrite(path: &str) -> File {
-            let mut info: SfInfo = Default::default();
-            File { handle: unsafe { sf_open(path.as_ptr(), SFM::WRITE as i32, &mut info) },
-                   path: String::from_str(path),
-            }
-        }
-
     }
 }
 
 fn main() {
-    let sound = sndfile::File::OpenRead("test.wav");
+    let sound = sndfile::File::open("test.wav", sndfile::SFM::READ);
     println!("{}", sound);
 }
