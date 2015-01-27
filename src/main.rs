@@ -1,8 +1,15 @@
+#![allow(unstable)]
+
+extern crate libc;
 
 mod sndfile {
-    extern crate libc;
+    use libc::{c_int, c_char, uint8_t, uint32_t, int32_t};
     use std::default::Default;
+    use std::ffi;
+    use std::str;
+
     type SfCount = i64;
+    
     #[repr(C)]
     struct SndFile;
 
@@ -26,8 +33,9 @@ mod sndfile {
 
     #[link(name = "sndfile")]
     extern {
-        fn sf_open(path: *const u8, mode: i32, sfinfo: *mut SfInfo) -> *mut SndFile;
-        fn sf_close(sndfile: *mut SndFile) -> i32;
+        fn sf_open(path: *const c_char, mode: int32_t, sfinfo: *mut SfInfo) -> *mut SndFile;
+        fn sf_close(sndfile: *mut SndFile) -> int32_t;
+        fn sf_strerror(sndfie: *mut SndFile) -> *const c_char;
     }
 
     #[allow(raw_pointer_derive)]
@@ -48,7 +56,15 @@ mod sndfile {
     impl File {
         pub fn open(path: &str, mode: SFM) -> File {
             let mut info: SfInfo = Default::default();
-            File { handle: unsafe { sf_open(path.as_ptr(), mode as i32, &mut info) },
+            let mut handle: *mut SndFile;
+            unsafe {
+                handle = sf_open(ffi::CString::from_slice(path.as_bytes()).as_ptr(), mode as i32, &mut info);
+                if handle.is_null() {
+                    let errstr = sf_strerror(handle);
+                    panic!("error: {}", str::from_utf8(ffi::c_str_to_bytes(&errstr)).unwrap());
+                }
+            }
+            File { handle: handle,
                    path: String::from_str(path),
             }
         }
