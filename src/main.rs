@@ -1,6 +1,7 @@
 #![allow(unstable)]
 
 extern crate libc;
+use std::os;
 
 mod sndfile {
     use libc::{c_char, int32_t, c_float};
@@ -186,22 +187,17 @@ mod sndfile {
 
     impl File {
         pub fn open(path: &str, mode: SFM) -> File {
-            let mut info: SfInfo;
-            match mode {
-                SFM::READ => {
-                    info = Default::default();
-                } 
-                SFM::WRITE | SFM::RDWR => {
-                    info = SfInfo {
-                        frames: 0,
-                        samplerate: 44100,
-                        channels: 1,
-                        format: SF_FORMAT_WAV | SF_FORMAT_PCM_16,
-                        sections: 1, // ?
-                        seekable: 1,
-                    };
+            let mut info: SfInfo = match mode {
+                SFM::READ => { Default::default() }
+                SFM::WRITE | SFM::RDWR => SfInfo {
+                    frames: 0,
+                    samplerate: 44100,
+                    channels: 1,
+                    format: SF_FORMAT_WAV | SF_FORMAT_PCM_16,
+                    sections: 1, // ?
+                    seekable: 1,
                 }
-            }
+            };
             let mut handle: *mut SndFile;
             unsafe {
                 handle = sf_open(ffi::CString::from_slice(path.as_bytes()).as_ptr(), mode as i32, &mut info);
@@ -248,13 +244,25 @@ mod sndfile {
     }
 }
 
+fn audiotar(bigdata: &[f32], smalldata: &[f32], levels: i32) -> Vec<f32> {
+    let mut out = Vec::new();
+    out.push_all(bigdata);
+    out
+}
+
 fn main() {
-    let mut sound = sndfile::File::open("test.wav", sndfile::SFM::READ);
-    if sound.channels() != 1 {
+    if os::args().len() != 4 {
+        panic!("usage: {} bigfile smallfile outfile", os::args()[0]);
+    }
+    let mut bigsound = sndfile::File::open(os::args()[1].as_slice(), sndfile::SFM::READ);
+    if bigsound.channels() != 1 {
         panic!("bad file, only mono is supported");
     }
-    println!("{}", sound);
-    let data = sound.read_everything();
-    let mut outsound = sndfile::File::open("out.wav", sndfile::SFM::WRITE);
-    outsound.write(data.as_slice());
+    let mut smallsound = sndfile::File::open(os::args()[2].as_slice(), sndfile::SFM::READ);
+    if smallsound.channels() != 1 {
+        panic!("bad file, only mono is supported");
+    }
+    let outdata = audiotar(bigsound.read_everything().as_slice(), smallsound.read_everything().as_slice(), 4);
+    let mut outsound = sndfile::File::open(os::args()[3].as_slice(), sndfile::SFM::WRITE);
+    outsound.write(outdata.as_slice());
 }
