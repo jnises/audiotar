@@ -2,6 +2,10 @@
 
 extern crate libc;
 use std::os;
+use std::num;
+use std::iter::AdditiveIterator;
+use std::num::Float;
+use std::num::FromPrimitive;
 
 mod sndfile {
     use libc::{c_char, int32_t, c_float};
@@ -242,6 +246,47 @@ mod sndfile {
             }
         }
     }
+}
+
+fn stretch(data: &[f32], length: uint) -> Vec<f32> {
+    let mut out: Vec<f32> = Vec::with_capacity(length);
+    for i in range(0, length) {
+        out.push(data[(data.len() * i) / length]);
+    }
+    out
+}
+
+//fn expected_value<'a, T: Iterator<Item=&'a f32>>(data: T) -> f32 {
+fn expected_value<'a, V, T>(data: T) -> V where
+    V: Float + FromPrimitive,
+    T: Iterator<Item=&'a V>,
+{
+    let a: V = FromPrimitive::from_int(0).unwrap();
+    let b: V = FromPrimitive::from_int(0).unwrap();
+    let (sum, num) = data.fold((a, b), |(sumacc, numacc), &x| {
+        let one: V = FromPrimitive::from_int(1).unwrap();
+        (sumacc + x, numacc + one)
+    });
+    return sum / num;
+}
+
+fn standard_deviation(data: &[f32]) -> f32 {
+    let e = expected_value(data.iter());
+    data.iter().map(|&x| (x - e).powi(2)).sum().sqrt()
+}
+
+fn covariance(data0: &[f32], data1: &[f32]) -> f32 {
+    let expected0 = expected_value(data0.iter());
+    let diff0 = data0.iter().map(|&x| x - expected0);
+    let expected1 = expected_value(data1.iter());
+    let diff1 = data1.iter().map(|&x| x - expected1);
+    // can't seem to pass the iterator directly to expected_value, some ref type mismatch or something
+    let tmp: Vec<f32> = diff0.zip(diff1).map(|(x, y)| x * y).collect();
+    expected_value(tmp.iter())
+}
+
+fn correlation(data0: &[f32], data1: &[f32]) -> f32 {
+    covariance(data0, data1) / (standard_deviation(data0) * standard_deviation(data1))
 }
 
 fn audiotar(bigdata: &[f32], smalldata: &[f32], levels: i32) -> Vec<f32> {
