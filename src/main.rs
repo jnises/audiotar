@@ -2,7 +2,6 @@
 
 extern crate libc;
 use std::os;
-use std::num;
 use std::iter::AdditiveIterator;
 use std::num::Float;
 use std::num::FromPrimitive;
@@ -256,7 +255,6 @@ fn stretch(data: &[f32], length: uint) -> Vec<f32> {
     out
 }
 
-//fn expected_value<'a, T: Iterator<Item=&'a f32>>(data: T) -> f32 {
 fn expected_value<'a, V, T>(data: T) -> V where
     V: Float + FromPrimitive,
     T: Iterator<Item=&'a V>,
@@ -267,7 +265,7 @@ fn expected_value<'a, V, T>(data: T) -> V where
         let one: V = FromPrimitive::from_int(1).unwrap();
         (sumacc + x, numacc + one)
     });
-    return sum / num;
+    sum / num
 }
 
 fn standard_deviation(data: &[f32]) -> f32 {
@@ -281,18 +279,43 @@ fn covariance(data0: &[f32], data1: &[f32]) -> f32 {
     let expected1 = expected_value(data1.iter());
     let diff1 = data1.iter().map(|&x| x - expected1);
     // can't seem to pass the iterator directly to expected_value, some ref type mismatch or something
-    let tmp: Vec<f32> = diff0.zip(diff1).map(|(x, y)| x * y).collect();
-    expected_value(tmp.iter())
+    expected_value(diff0.zip(diff1).map(|(x, y)| x * y).collect::<Vec<f32>>().iter())
 }
 
 fn correlation(data0: &[f32], data1: &[f32]) -> f32 {
     covariance(data0, data1) / (standard_deviation(data0) * standard_deviation(data1))
 }
 
-fn audiotar(bigdata: &[f32], smalldata: &[f32], levels: i32) -> Vec<f32> {
-    let mut out = Vec::new();
-    out.push_all(bigdata);
+fn process(error: &mut [f32], basis: &[f32], level: i32) -> Vec<f32> {
+    let mut out = Vec::with_capacity(error.len());
+    if level > 0 && error.len() > 0 {
+        let corr = correlation(error, basis);
+        for ((mut errsample, &basissample), mut outsample) in error.iter_mut().zip(basis.iter()).zip(out.iter_mut()) {
+            *errsample -= basissample * corr;
+            *outsample = basissample * corr;
+        }
+        let smallererrorlen = error.len() / 2;
+        if smallererrorlen > 0 {
+            let smallerbasis = stretch(basis, smallererrorlen);
+            let firstout = process(error.slice_to_mut(smallererrorlen), smallerbasis.as_slice(), level - 1);
+            for (mut outsample, &firstsample) in out.iter_mut().zip(firstout.iter()) {
+                *outsample += firstsample;
+            }
+            let lastout = process(error.slice_from_mut(smallererrorlen), smallerbasis.as_slice(), level - 1);
+            for (mut outsample, &lastsample) in out.slice_from_mut(smallererrorlen).iter_mut().zip(lastout.iter()) {
+                *outsample += lastsample;
+            }
+        }
+    } else {
+        out.resize(error.len(), 0.);
+    }
     out
+}
+
+fn audiotar(bigdata: &[f32], smalldata: &[f32], levels: i32) -> Vec<f32> {
+    let mut error = Vec::new();
+    error.push_all(bigdata);
+    process(error.as_mut_slice(), stretch(smalldata, bigdata.len()).as_slice(), levels)
 }
 
 fn main() {
