@@ -250,7 +250,12 @@ mod sndfile {
 fn stretch(data: &[f32], length: uint) -> Vec<f32> {
     let mut out: Vec<f32> = Vec::with_capacity(length);
     for i in range(0, length) {
-        out.push(data[(data.len() * i) / length]);
+        // linear
+        // todo do downsampling
+        let value = data.len() as f32 * i as f32 / length as f32;
+        let low = value.trunc();
+        let interpolated = data[low as uint] * (1. - value.fract()) + data[low.min(data.len() as f32 - 1.) as uint] * value.fract();
+        out.push(interpolated);
     }
     out
 }
@@ -333,7 +338,7 @@ fn main() {
     if smallsound.channels() != 1 {
         panic!("bad file, only mono is supported");
     }
-    let outdata = audiotar(bigsound.read_everything().as_slice(), smallsound.read_everything().as_slice(), 16);
+    let outdata = audiotar(bigsound.read_everything().as_slice(), smallsound.read_everything().as_slice(), 18);
     let mut outsound = sndfile::File::open(os::args()[3].as_slice(), sndfile::SFM::WRITE);
     outsound.write(outdata.as_slice());
 }
