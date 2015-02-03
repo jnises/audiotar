@@ -270,7 +270,7 @@ fn expected_value<'a, V, T>(data: T) -> V where
 
 fn standard_deviation(data: &[f32]) -> f32 {
     let e = expected_value(data.iter());
-    data.iter().map(|&x| (x - e).powi(2)).sum().sqrt()
+    data.iter().map(|&x| (x - e).powi(2) / data.len() as f32).sum().sqrt()
 }
 
 fn covariance(data0: &[f32], data1: &[f32]) -> f32 {
@@ -287,9 +287,12 @@ fn correlation(data0: &[f32], data1: &[f32]) -> f32 {
 }
 
 fn process(error: &mut [f32], basis: &[f32], level: i32) -> Vec<f32> {
+    println!("level {}", level);
     let mut out = Vec::with_capacity(error.len());
+    out.resize(error.len(), 0.);
     if level > 0 && error.len() > 0 {
         let corr = correlation(error, basis);
+        println!("correlation {}", corr);
         for ((mut errsample, &basissample), mut outsample) in error.iter_mut().zip(basis.iter()).zip(out.iter_mut()) {
             *errsample -= basissample * corr;
             *outsample = basissample * corr;
@@ -330,7 +333,7 @@ fn main() {
     if smallsound.channels() != 1 {
         panic!("bad file, only mono is supported");
     }
-    let outdata = audiotar(bigsound.read_everything().as_slice(), smallsound.read_everything().as_slice(), 4);
+    let outdata = audiotar(bigsound.read_everything().as_slice(), smallsound.read_everything().as_slice(), 16);
     let mut outsound = sndfile::File::open(os::args()[3].as_slice(), sndfile::SFM::WRITE);
     outsound.write(outdata.as_slice());
 }
