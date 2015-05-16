@@ -1,10 +1,9 @@
-#![allow(unstable)]
-
 extern crate libc;
-use std::os;
-use std::iter::AdditiveIterator;
-use std::num::Float;
-use std::num::FromPrimitive;
+extern crate num;
+
+use num::traits::Float;
+use std::env;
+use std::iter;
 
 mod sndfile {
     use libc::{c_char, int32_t, c_float};
@@ -12,6 +11,7 @@ mod sndfile {
     use std::ffi;
     use std::str;
     use std::vec::Vec;
+    use std::iter;
 
     type SfCount = i64;
     
@@ -153,7 +153,7 @@ mod sndfile {
 
     #[repr(C)]
     #[derive(Default)]
-    #[derive(Show)]
+    #[derive(Debug)]
     struct SfInfo {
         frames: SfCount,
         samplerate: i32,
@@ -173,7 +173,7 @@ mod sndfile {
     }
 
     #[allow(raw_pointer_derive)]
-    #[derive(Show)]
+    #[derive(Debug)]
     pub struct File {
         handle: *mut SndFile,
         path: String,
@@ -203,14 +203,14 @@ mod sndfile {
             };
             let mut handle: *mut SndFile;
             unsafe {
-                handle = sf_open(ffi::CString::from_slice(path.as_bytes()).as_ptr(), mode as i32, &mut info);
+                handle = sf_open(ffi::CString::new(path.as_bytes()).unwrap().as_ptr(), mode as i32, &mut info);
                 if handle.is_null() {
                     let errstr = sf_strerror(handle);
-                    panic!("error: {}", str::from_utf8(ffi::c_str_to_bytes(&errstr)).unwrap());
+                    panic!("error: {}", str::from_utf8(ffi::CStr::from_ptr(errstr).to_bytes()).unwrap());
                 }
             }
             File { handle: handle,
-                   path: String::from_str(path),
+                   path: path.to_string(),
                    info: info,
             }
         }
@@ -223,14 +223,14 @@ mod sndfile {
             let mut outvec: Vec<f32> = Vec::new();
             loop {
                 let oldsize = outvec.len();
-                outvec.resize(oldsize + 64, 0f32);
+                outvec.extend(iter::repeat(0f32).take(64));
                 let read;
                 unsafe {
-                    let buffer = outvec.as_mut_ptr().offset(oldsize as int);
+                    let buffer = outvec.as_mut_ptr().offset(oldsize as isize);
                     read = sf_read_float(self.handle, buffer, 64);
                 }
                 if read < 64 {
-                    outvec.truncate(oldsize + read as uint);
+                    outvec.truncate(oldsize + read as usize);
                     break;
                 }
             }
@@ -247,27 +247,27 @@ mod sndfile {
     }
 }
 
-fn stretch(data: &[f32], length: uint) -> Vec<f32> {
+fn stretch(data: &[f32], length: usize) -> Vec<f32> {
     let mut out: Vec<f32> = Vec::with_capacity(length);
-    for i in range(0, length) {
+    for i in 0..length {
         // linear
         // todo do downsampling
         let value = data.len() as f32 * i as f32 / length as f32;
         let low = value.trunc();
-        let interpolated = data[low as uint] * (1. - value.fract()) + data[low.min(data.len() as f32 - 1.) as uint] * value.fract();
+        let interpolated = data[low as usize] * (1. - value.fract()) + data[low.min(data.len() as f32 - 1.) as usize] * value.fract();
         out.push(interpolated);
     }
     out
 }
 
 fn expected_value<'a, V, T>(data: T) -> V where
-    V: Float + FromPrimitive,
+    V: Float,
     T: Iterator<Item=&'a V>,
 {
-    let a: V = FromPrimitive::from_int(0).unwrap();
-    let b: V = FromPrimitive::from_int(0).unwrap();
+    let a: V = num::zero();
+    let b: V = num::zero();
     let (sum, num) = data.fold((a, b), |(sumacc, numacc), &x| {
-        let one: V = FromPrimitive::from_int(1).unwrap();
+        let one: V = num::one();
         (sumacc + x, numacc + one)
     });
     sum / num
@@ -275,7 +275,7 @@ fn expected_value<'a, V, T>(data: T) -> V where
 
 fn standard_deviation(data: &[f32]) -> f32 {
     let e = expected_value(data.iter());
-    data.iter().map(|&x| (x - e).powi(2) / data.len() as f32).sum().sqrt()
+    data.iter().map(|&x| (x - e).powi(2) / data.len() as f32).fold(0f32, |acc, item| acc + item).sqrt()
 }
 
 fn covariance(data0: &[f32], data1: &[f32]) -> f32 {
@@ -294,51 +294,51 @@ fn correlation(data0: &[f32], data1: &[f32]) -> f32 {
 fn process(error: &mut [f32], basis: &[f32], level: i32) -> Vec<f32> {
     println!("level {}", level);
     let mut out = Vec::with_capacity(error.len());
-    out.resize(error.len(), 0.);
+    out.extend(iter::repeat(0.).take(error.len()));
     if level > 0 && error.len() > 0 {
         let corr = correlation(error, basis);
         println!("correlation {}", corr);
-        for ((mut errsample, &basissample), mut outsample) in error.iter_mut().zip(basis.iter()).zip(out.iter_mut()) {
+        for ((errsample, &basissample), outsample) in error.iter_mut().zip(basis.iter()).zip(out.iter_mut()) {
             *errsample -= basissample * corr;
             *outsample = basissample * corr;
         }
         let smallererrorlen = error.len() / 2;
         if smallererrorlen > 0 {
             let smallerbasis = stretch(basis, smallererrorlen);
-            let firstout = process(error.slice_to_mut(smallererrorlen), smallerbasis.as_slice(), level - 1);
-            for (mut outsample, &firstsample) in out.iter_mut().zip(firstout.iter()) {
+            let firstout = process(&mut error[..smallererrorlen], &smallerbasis[..], level - 1);
+            for (outsample, &firstsample) in out.iter_mut().zip(firstout.iter()) {
                 *outsample += firstsample;
             }
-            let lastout = process(error.slice_from_mut(smallererrorlen), smallerbasis.as_slice(), level - 1);
-            for (mut outsample, &lastsample) in out.slice_from_mut(smallererrorlen).iter_mut().zip(lastout.iter()) {
+            let lastout = process(&mut error[smallererrorlen..], &smallerbasis[..], level - 1);
+            for (outsample, &lastsample) in (&mut out[smallererrorlen..]).iter_mut().zip(lastout.iter()) {
                 *outsample += lastsample;
             }
         }
     } else {
-        out.resize(error.len(), 0.);
+        out.extend(iter::repeat(0.).take(error.len()));
     }
     out
 }
 
 fn audiotar(bigdata: &[f32], smalldata: &[f32], levels: i32) -> Vec<f32> {
-    let mut error = Vec::new();
-    error.push_all(bigdata);
-    process(error.as_mut_slice(), stretch(smalldata, bigdata.len()).as_slice(), levels)
+    let mut error : Vec<f32> = Vec::new();
+    error.extend(bigdata.iter().map(|x| x.clone()));
+    process(&mut error[..], &stretch(smalldata, bigdata.len())[..], levels)
 }
 
 fn main() {
-    if os::args().len() != 4 {
-        panic!("usage: {} bigfile smallfile outfile", os::args()[0]);
+    if env::args().len() != 4 {
+        panic!("usage: {} bigfile smallfile outfile", env::args().nth(0).unwrap());
     }
-    let mut bigsound = sndfile::File::open(os::args()[1].as_slice(), sndfile::SFM::READ);
+    let mut bigsound = sndfile::File::open(&env::args().nth(1).unwrap()[..], sndfile::SFM::READ);
     if bigsound.channels() != 1 {
         panic!("bad file, only mono is supported");
     }
-    let mut smallsound = sndfile::File::open(os::args()[2].as_slice(), sndfile::SFM::READ);
+    let mut smallsound = sndfile::File::open(&env::args().nth(2).unwrap()[..], sndfile::SFM::READ);
     if smallsound.channels() != 1 {
         panic!("bad file, only mono is supported");
     }
-    let outdata = audiotar(bigsound.read_everything().as_slice(), smallsound.read_everything().as_slice(), 18);
-    let mut outsound = sndfile::File::open(os::args()[3].as_slice(), sndfile::SFM::WRITE);
-    outsound.write(outdata.as_slice());
+    let outdata = audiotar(&bigsound.read_everything()[..], &smallsound.read_everything()[..], 18);
+    let mut outsound = sndfile::File::open(&env::args().nth(3).unwrap()[..], sndfile::SFM::WRITE);
+    outsound.write(&outdata[..]);
 }
