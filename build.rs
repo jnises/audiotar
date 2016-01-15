@@ -1,4 +1,6 @@
+extern crate pkg_config;
+
 fn main() {
     // so we can find libsndfile
-    //println!("cargo:rustc-link-search=/usr/local/lib");
+    pkg_config::find_library("sndfile").unwrap();
 }

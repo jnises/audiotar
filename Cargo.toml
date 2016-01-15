@@ -9,3 +9,7 @@ build = "build.rs"
 
 num = "*"
 libc = "*"
+
+[build-dependencies]
+
+pkg-config = "*"
