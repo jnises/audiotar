@@ -3,6 +3,7 @@
 name = "audiotar"
 version = "0.0.1"
 authors = ["Joel Nises <joel@nises.se>"]
+build = "build.rs"
 
 [dependencies]
 

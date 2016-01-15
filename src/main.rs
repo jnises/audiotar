@@ -15,8 +15,7 @@ mod sndfile {
 
     type SfCount = i64;
     
-    #[repr(C)]
-    struct SndFile;
+    enum SndFile {}
 
     #[allow(dead_code)]
     pub enum SFM {
@@ -201,7 +200,7 @@ mod sndfile {
                     seekable: 1,
                 }
             };
-            let mut handle: *mut SndFile;
+            let handle: *mut SndFile;
             unsafe {
                 handle = sf_open(ffi::CString::new(path.as_bytes()).unwrap().as_ptr(), mode as i32, &mut info);
                 if handle.is_null() {
@@ -260,7 +259,7 @@ fn stretch(data: &[f32], length: usize) -> Vec<f32> {
     out
 }
 
-fn expected_value<'a, V, T>(data: T) -> V where
+fn expected_value<'a, V: 'a, T>(data: T) -> V where
     V: Float,
     T: Iterator<Item=&'a V>,
 {
