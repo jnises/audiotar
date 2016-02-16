@@ -171,7 +171,6 @@ mod sndfile {
         fn sf_write_float(sndfile: *mut SndFile, ptr: *const c_float, samples: SfCount) -> SfCount;
     }
 
-    #[allow(raw_pointer_derive)]
     #[derive(Debug)]
     pub struct File {
         handle: *mut SndFile,
